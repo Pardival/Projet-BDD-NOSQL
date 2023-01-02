@@ -18,8 +18,8 @@ public class Main {
         /* Connection to MongoDB */
         MongoClient mongo = MongoClients.create("mongodb://localhost:27017");
 
-        // Connexion directe au serveur Neo4J
-        Driver driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic("neo4j", "neo4j") );
+        /* Connexion to Neo4j server */
+        Driver driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.none());
 
         String optionChoisie;
         String input;
@@ -36,7 +36,7 @@ public class Main {
                 input = sc.nextLine();
                 mongoCollection = selectCollection(mongoDatabase, input);
             } else if (optionChoisie.equals("3")) {
-                // TODO TRANSFERT NEO4J TO MONGO
+                transfertToMongoDB(driver, mongoCollection);
             }
         } while (!optionChoisie.equals("0"));
     }
@@ -48,7 +48,7 @@ public class Main {
                 (db == null ? "Aucune":db.getName()) + ")");
         System.out.println("2 - Sélectionner une collection MongoDB (actuellement : " +
                 (col == null ? "Aucune":col.getNamespace().getCollectionName())+")");
-        System.out.println("3 - Lister tous les documents");
+        System.out.println("3 - Transfert data");
         System.out.println("4 - Rechercher un document par nom");
         System.out.println();
         System.out.println("0 - Quitter");
@@ -71,24 +71,27 @@ public class Main {
         Session session = driver.session();
         Result result = session.run(
                 "MATCH (n:Article) " +
-                        "RETURN n.id, n.titre "+
-                        "ORDER BY titre ASC"
+                        "RETURN n.id as id, n.titre as titre "+
+                        "ORDER BY n.titre ASC"
         );
 
-        while (result.hasNext())
-        {
+        while (result.hasNext()) {
             Record record = result.next();
-            int id = record.get("id").asInt();
+            String id = record.get("id").asString();
             String titre  = record.get("titre").asString().trim().toLowerCase();
             StringTokenizer st = new StringTokenizer(titre, ".( )+[]{}?! ");
             ArrayList<String> motcles = new ArrayList<String>();
 
-            while (st.hasMoreTokens()){
+            while (st.hasMoreTokens()) {
                 motcles.add(st.nextToken());
             }
             Document dc = new Document().append("idDocument", id).append("motsCles", motcles);
             insertOne(cl, dc);
         }
         session.close();
+    }
+
+    private static void addIndex() {
+
     }
 }
