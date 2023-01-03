@@ -64,7 +64,7 @@ public class Main {
 
             // Création du champs motcles
             String titre  = record.get("titre").asString().trim().toLowerCase();
-            StringTokenizer st = new StringTokenizer(titre, ".( )+[]{}?! ");
+            StringTokenizer st = new StringTokenizer(titre, ",‘-:;.( )+[]{}?!' ");
             ArrayList<String> motcles = new ArrayList<String>();
 
             while (st.hasMoreTokens()) {
