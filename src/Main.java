@@ -1,6 +1,8 @@
 import com.mongodb.client.*;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.Updates;
+import com.mongodb.client.result.UpdateResult;
 import org.bson.Document;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
@@ -9,7 +11,6 @@ import static com.mongodb.client.model.Filters.eq;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.StringTokenizer;
 
 public class Main {
@@ -24,58 +25,33 @@ public class Main {
         MongoDatabase mongoDatabase = mongo.getDatabase("TPdb");     // Database sélectionné
         MongoCollection mongoCollection = mongoDatabase.getCollection("index");; // Collection sélectionné
 
-        String optionChoisie;
-        String input;
-        Scanner sc = new Scanner (System.in);
+        //Q1
+        transfertToMongoDB(driver, mongo);
 
-        do {
-            afficheMenu(mongoDatabase, mongoCollection);
-            optionChoisie = sc.nextLine();
+        //Q3
+        reverseCollection(mongo);
 
-            if (optionChoisie.equals("1")) {
-                input = sc.nextLine();
-                mongoDatabase = selectDatabase(mongo, input);
-            } else if (optionChoisie.equals("2")) {
-                input = sc.nextLine();
-                mongoCollection = selectCollection(mongoDatabase, input);
-            } else if (optionChoisie.equals("3")) {
-                transfertToMongoDB(driver, mongoCollection);
-            } else if (optionChoisie.equals("4")) {
-                reverseCollection(mongoDatabase, mongoCollection);
-            }
-        } while (!optionChoisie.equals("0"));
-    }
+        //Q4
+        findArticle(driver, mongo, "with");
 
-    private static void afficheMenu(MongoDatabase db, MongoCollection<Document> col){
-        System.out.println();
-        System.out.println("Menu : ");
-        System.out.println("1 - Sélectionner une base MongoDB (actuellement : " +
-                (db == null ? "Aucune":db.getName()) + ")");
-        System.out.println("2 - Sélectionner une collection MongoDB (actuellement : " +
-                (col == null ? "Aucune":col.getNamespace().getCollectionName())+")");
-        System.out.println("3 - Transfert data");
-        System.out.println("4 - Reverse Index");
-        System.out.println();
-        System.out.println("0 - Quitter");
+        //Q5
+        bestAuthor(driver);
+
+        //Q6 TODO
+
 
     }
 
-    private static MongoDatabase selectDatabase(MongoClient mongo, String databaseName) {
-        return mongo.getDatabase(databaseName);
-    }
-
-    private static MongoCollection selectCollection(MongoDatabase db, String collectionName) {
-        return db.getCollection(collectionName);
-    }
-
-    private static void insertOne(MongoCollection cl, Document dc) {
-        cl.insertOne(dc);
-    }
 
     // Q1
-    private static void transfertToMongoDB(Driver driver, MongoCollection cl) {
+    private static void transfertToMongoDB(Driver driver, MongoClient mongo) {
         // Lancement session neo4j
         Session session = driver.session();
+        // Database sélectionné
+        MongoDatabase mongoDatabase = mongo.getDatabase("TPdb");
+        // Collection sélectionné
+        MongoCollection cl = mongoDatabase.getCollection("index");
+
         // Execution requête neo4j
         Result result = session.run(
                 "MATCH (n:Article) " +
@@ -97,37 +73,110 @@ public class Main {
 
             // Création du document et insertion
             Document dc = new Document().append("idDocument", id).append("motsCles", motcles);
-            insertOne(cl, dc);
+            cl.insertOne(dc);
         }
         session.close();
     }
 
-    // Q2
-    private static void reverseCollection(MongoDatabase db, MongoCollection index) {
+    // Q3
+    private static void reverseCollection(MongoClient mongo) {
+        // Database sélectionné
+        MongoDatabase mongoDatabase = mongo.getDatabase("TPdb");
+        // Collection sélectionné
+        MongoCollection index = mongoDatabase.getCollection("index");
         // Creation de la collection reverseIndex
-        MongoCollection reverseIndexCollection = db.getCollection("reverseIndex");
+        MongoCollection reverseIndexCollection = mongoDatabase.getCollection("reverseIndex");
 
         // Récupération des documents dans index
         List<Document> documents = (List<Document>) index.find().into(new ArrayList<>());
 
         for (Document d : documents) {
-            for (Document current : (List<Document>) d) {
+            for (String m :  (List<String>) d.get("motsCles")) {
                 // Rechercher le mot dans indexReverse
-                FindIterable<Document> documentsOnReverseIndex = reverseIndexCollection.find(eq("mot", current.get("motCles")));
+                FindIterable<Document> documentsOnReverseIndex = reverseIndexCollection.find(eq("mot", m));
+                // Modification si existant
                 if (documentsOnReverseIndex.first() != null) {
-                    Document newDocument = documentsOnReverseIndex.first().append("documents", current.get("idDocument"));
-                    reverseIndexCollection.replaceOne(
-                            Filters.eq("_id", documentsOnReverseIndex.first().get("_id")),
-                            newDocument
-                    );
+                        Document newDocument = documentsOnReverseIndex.first().append("documents", d.get("idDocument"));
+                        UpdateResult result = reverseIndexCollection.updateOne(
+                                Filters.eq("mot", m),
+                                Updates.addToSet("documents", d.get("idDocument"))
+                        );
+
                 } else {
+                    // Insertion si non existant
                     Document newDocument = new Document();
-                    newDocument.put("mot", current.get("motCles"));
+                    newDocument.append("mot", m);
+                    newDocument.append("documents", List.of(d.get("idDocument")));
                     reverseIndexCollection.insertOne(newDocument);
                 }
             }
         }
         // index croissant
         reverseIndexCollection.createIndex(Indexes.ascending("mot"));
+    }
+
+    // Q4
+    private static void findArticle(Driver driver, MongoClient mongo, String aRechercher) {
+        // Lancement session neo4j
+        Session session = driver.session();
+        // Database sélectionné
+        MongoDatabase mongoDatabase = mongo.getDatabase("TPdb");
+        // Collection sélectionné
+        MongoCollection reverseIndexCollection = mongoDatabase.getCollection("reverseIndex");
+
+        // Recherche du mot clé dans la collection
+        Document document = (Document) reverseIndexCollection.find(Filters.eq("mot", aRechercher)).first();
+
+        // faire traitement si le mot clé existe
+        if (document != null) {
+            // Nombre d'article trouvé
+            int nbResults = 0;
+            // On récupère les différents id des articles contenant le mot clé
+            List<Integer> idDocs = document.getList("documents", Integer.class);
+            // On récupère les articles dans neo4j
+            Result result = session.run(
+                    "MATCH (n:Article) " +
+                            "WHERE Id(n) IN " +  idDocs.toString() +
+                            "RETURN n.titre as titre, Id(n) as id "+
+                            "ORDER BY n.titre ASC "
+            );
+
+            // Affichage des articles
+            while (result.hasNext()) {
+                Record record = result.next();
+                Integer id = record.get("id").asInt();
+                String titre = record.get("titre").asString();
+
+                nbResults++;
+                System.out.println(id + " - " + titre);
+            }
+            System.out.println("On retrouve " +  nbResults + " article avec le mot " + aRechercher );
+        }
+        session.close();
+    }
+
+    // Q5
+    private static void bestAuthor(Driver driver) {
+        // Lancement session neo4j
+        Session session = driver.session();
+
+        // Requête neo4j
+        Result result = session.run(
+                "MATCH (a:Auteur) - [r:Ecrire] - (n:Article) " +
+                        "WITH a, count(n) as nbArticles " +
+                        "RETURN a.nom as nom, nbArticles " +
+                        "ORDER BY nbArticles DESC, nom ASC " +
+                        "LIMIT 10"
+        );
+
+        // Affichage du top
+        while(result.hasNext()) {
+            Record record = result.next();
+            Integer nbArtciles = record.get("nbArticles").asInt();
+            String nom = record.get("nom").asString();
+
+            System.out.println(nbArtciles + " - " + nom);
+        }
+        session.close();
     }
 }
