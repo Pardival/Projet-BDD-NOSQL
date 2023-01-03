@@ -1,12 +1,14 @@
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.*;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Indexes;
 import org.bson.Document;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
+import static com.mongodb.client.model.Filters.eq;
+
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.StringTokenizer;
 
@@ -37,6 +39,8 @@ public class Main {
                 mongoCollection = selectCollection(mongoDatabase, input);
             } else if (optionChoisie.equals("3")) {
                 transfertToMongoDB(driver, mongoCollection);
+            } else if (optionChoisie.equals("4")) {
+                reverseCollection(mongoDatabase, mongoCollection);
             }
         } while (!optionChoisie.equals("0"));
     }
@@ -49,7 +53,7 @@ public class Main {
         System.out.println("2 - Sélectionner une collection MongoDB (actuellement : " +
                 (col == null ? "Aucune":col.getNamespace().getCollectionName())+")");
         System.out.println("3 - Transfert data");
-        System.out.println("4 - Rechercher un document par nom");
+        System.out.println("4 - Reverse Index");
         System.out.println();
         System.out.println("0 - Quitter");
 
@@ -67,6 +71,7 @@ public class Main {
         cl.insertOne(dc);
     }
 
+    // Q1 => trouver solution pour récupérer id
     private static void transfertToMongoDB(Driver driver, MongoCollection cl) {
         Session session = driver.session();
         Result result = session.run(
@@ -91,7 +96,32 @@ public class Main {
         session.close();
     }
 
-    private static void addIndex() {
+    // Q2
+    private static void reverseCollection(MongoDatabase db, MongoCollection index) {
+        // Creation de la collection reverseIndex
+        MongoCollection reverseIndexCollection = db.getCollection("reverseIndex");
 
+        // Récupération des documents dans index
+        List<Document> documents = (List<Document>) index.find().into(new ArrayList<>());
+
+        for (Document d : documents) {
+            for (Document current : (List<Document>) d) {
+                // Rechercher le mot dans indexReverse
+                FindIterable<Document> documentsOnReverseIndex = reverseIndexCollection.find(eq("mot", current.get("motCles")));
+                if (documentsOnReverseIndex.first() != null) {
+                    Document newDocument = documentsOnReverseIndex.first().append("documents", current.get("idDocument"));
+                    reverseIndexCollection.replaceOne(
+                            Filters.eq("_id", documentsOnReverseIndex.first().get("_id")),
+                            newDocument
+                    );
+                } else {
+                    Document newDocument = new Document();
+                    newDocument.put("mot", current.get("motCles"));
+                    reverseIndexCollection.insertOne(newDocument);
+                }
+            }
+        }
+        // index croissant
+        reverseIndexCollection.createIndex(Indexes.ascending("mot"));
     }
 }

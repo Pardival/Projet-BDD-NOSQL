@@ -116,7 +116,6 @@ public class TestConnectionMongoDB{
                                 afficheDocumentIndente((Document)d,0);
                             }
                         }
-
                     }
                     else{
                         if (optionChoisie.equals("4")){
