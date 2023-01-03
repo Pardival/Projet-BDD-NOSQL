@@ -14,14 +14,15 @@ import java.util.StringTokenizer;
 
 public class Main {
     public static void main(String[] args) {
-        MongoDatabase mongoDatabase = null;     // Database selected
-        MongoCollection mongoCollection = null; // Collection selected
-
-        /* Connection to MongoDB */
+        /* Connexion à MongoDB */
         MongoClient mongo = MongoClients.create("mongodb://localhost:27017");
 
-        /* Connexion to Neo4j server */
+        /* Connexion à Neo4j server */
         Driver driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.none());
+
+        /* Selection pour mongo db */
+        MongoDatabase mongoDatabase = mongo.getDatabase("TPdb");     // Database sélectionné
+        MongoCollection mongoCollection = mongoDatabase.getCollection("index");; // Collection sélectionné
 
         String optionChoisie;
         String input;
@@ -71,18 +72,21 @@ public class Main {
         cl.insertOne(dc);
     }
 
-    // Q1 => trouver solution pour récupérer id
+    // Q1
     private static void transfertToMongoDB(Driver driver, MongoCollection cl) {
+        // Lancement session neo4j
         Session session = driver.session();
+        // Execution requête neo4j
         Result result = session.run(
                 "MATCH (n:Article) " +
-                        "RETURN n.id as id, n.titre as titre "+
+                        "RETURN Id(n) as id, n.titre as titre "+
                         "ORDER BY n.titre ASC"
         );
-
         while (result.hasNext()) {
             Record record = result.next();
-            String id = record.get("id").asString();
+            Integer id = record.get("id").asInt();
+
+            // Création du champs motcles
             String titre  = record.get("titre").asString().trim().toLowerCase();
             StringTokenizer st = new StringTokenizer(titre, ".( )+[]{}?! ");
             ArrayList<String> motcles = new ArrayList<String>();
@@ -90,6 +94,8 @@ public class Main {
             while (st.hasMoreTokens()) {
                 motcles.add(st.nextToken());
             }
+
+            // Création du document et insertion
             Document dc = new Document().append("idDocument", id).append("motsCles", motcles);
             insertOne(cl, dc);
         }
